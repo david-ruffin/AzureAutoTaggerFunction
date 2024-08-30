@@ -1,6 +1,10 @@
 # Param definition to accept Event Grid data and metadata
 param($eventGridEvent, $TriggerMetadata)
 
+# Convert the event grid event to JSON format and output it to the console.
+# This is useful for debugging or logging purposes.
+$eventGridEvent | ConvertTo-Json -Depth 5 | Write-Host
+
 # Fetch and format the current date and time with timezone adjustments
 $date = Get-Date -Format 'M/d/yyyy'
 $time = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), 'Pacific Standard Time').ToString("hh:mmtt") + ' PST'
