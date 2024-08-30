@@ -20,6 +20,17 @@ $resourceId = $eventGridEvent.data.resourceUri
 $creator = $name -ne $null ? $name : ("Service Principal ID " + $appid)
 $lastModifiedBy = $email -ne $null ? $email : ("Service Principal ID " + $appid)
 
+# Output the extracted information to the console for debugging or logging purposes.
+Write-Host "######################"
+Write-Host "Name: $name"
+Write-Host "resourceId: $resourceId"
+Write-Host "email: $email"
+Write-Host "appid: $appid"
+Write-Host "date: $date"
+Write-Host "time_PST: $time_PST"
+Write-Host "creator: $creator"
+Write-Host "lastModifiedBy: $lastModifiedBy"
+
 # Attempt to retrieve and tag the resource, handling any errors encountered
 try {
     $resource = Get-AzResource -ResourceId $resourceId -ErrorAction Stop
