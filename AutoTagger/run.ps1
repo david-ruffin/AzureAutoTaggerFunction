@@ -46,7 +46,8 @@ Write-Host "##################################################################"
 $ignore = @(
     "providers/Microsoft.Resources/deployments",
     "providers/Microsoft.Resources/tags",
-    "providers/Microsoft.Network/frontdoor"
+    "providers/Microsoft.Network/frontdoor",
+    "providers/Microsoft.Insights/autoscalesettings" # Add more patterns as needed
 )
 
 # Check if the resourceId matches any of the patterns in the $ignore list.
