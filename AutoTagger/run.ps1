@@ -22,6 +22,13 @@ $name = $eventGridEvent.data.claims.name
 $appid = $eventGridEvent.data.claims.appid
 $email = $eventGridEvent.data.claims.'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'
 $resourceId = $eventGridEvent.data.resourceUri
+$ipaddr = $eventGridEvent.data.claims.ipaddr
+
+# Check if 'ipaddr' is present; if not, skip tagging this resource.
+if (-not $ipaddr) {
+    Write-Host "No IP address found in the event data. Skipping tagging for resource $resourceId."
+    return
+}
 
 # Determine the 'Creator' and 'LastModifiedBy' tags based on the extracted data.
 # If 'name' is not null, it is used as 'Creator'; otherwise, the application ID (appid) is used.
@@ -30,7 +37,7 @@ $creator = $name -ne $null ? $name : ("Service Principal ID " + $appid)
 $lastModifiedBy = $email -ne $null ? $email : ("Service Principal ID " + $appid)
 
 # Output the extracted information to the console for debugging or logging purposes.
-Write-Host "##################################################################"
+Write-Host "######################"
 Write-Host "Name: $name"
 Write-Host "resourceId: $resourceId"
 Write-Host "email: $email"
@@ -39,15 +46,13 @@ Write-Host "date: $date"
 Write-Host "time_PST: $time_PST"
 Write-Host "creator: $creator"
 Write-Host "lastModifiedBy: $lastModifiedBy"
-Write-Host "##################################################################"
 
 # Define a list of resource types to ignore when attempting to add tags.
 # These are resource types that either do not support tags or have specific reasons to be excluded.
 $ignore = @(
     "providers/Microsoft.Resources/deployments",
     "providers/Microsoft.Resources/tags",
-    "providers/Microsoft.Network/frontdoor",
-    "providers/Microsoft.Insights/autoscalesettings" # Add more patterns as needed
+    "providers/Microsoft.Network/frontdoor"
 )
 
 # Check if the resourceId matches any of the patterns in the $ignore list.
@@ -91,6 +96,7 @@ try {
     # Output an error message to the console along with the exception details.
     Write-Host "Failed to update tags for resource $resourceId. Error: $_"
 }
+
 
 # Output the current user context for auditing or logging purposes.
 whoami
