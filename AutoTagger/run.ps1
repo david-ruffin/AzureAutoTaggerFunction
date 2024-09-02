@@ -97,6 +97,5 @@ try {
     Write-Host "Failed to update tags for resource $resourceId. Error: $_"
 }
 
-
 # Output the current user context for auditing or logging purposes.
 whoami
