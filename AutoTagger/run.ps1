@@ -48,8 +48,7 @@ Write-Host "creator: $creator"
 Write-Host "lastModifiedBy: $lastModifiedBy"
 Write-Host "##### List PowerShell Modules ####"
 get-module
-Write-Host "##### List PowerShell cmdlets ####"
-get-command
+
 
 # Define a list of resource types to ignore when attempting to add tags.
 # These are resource types that either do not support tags or have specific reasons to be excluded.
