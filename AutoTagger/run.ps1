@@ -59,9 +59,18 @@ foreach ($ignorePattern in $ignore) {
 # Main logic block with error handling.
 try {
     # Retrieve the current tags on the resource using its resourceId.
+    Write-Host "Attempting to retrieve current tags for resource $resourceId..."
     $currentTags = Get-AzTag -ResourceId $resourceId
+    
+    if ($currentTags -eq $null) {
+        Write-Host "No tags found on resource $resourceId. Proceeding to add new tags."
+        $currentTags = @{ Tags = @{} }  # Initialize empty tag hashtable
+    } else {
+        Write-Host "Current Tags: $($currentTags.Tags | ConvertTo-Json)"
+    }
 
     # Check if any of the key tags already exist (Creator, DateCreated, or TimeCreatedInPST).
+    Write-Host "Checking for existing key tags (Creator, DateCreated, TimeCreatedInPST)..."
     if ($currentTags.Tags.ContainsKey("Creator") -or 
         $currentTags.Tags.ContainsKey("DateCreated") -or 
         $currentTags.Tags.ContainsKey("TimeCreatedInPST")) {
@@ -70,19 +79,25 @@ try {
     }
 
     # If none of the key tags exist, proceed to add them.
-    $tagsToUpdate = @{}
-    $tagsToUpdate["Creator"] = $creator
-    $tagsToUpdate["DateCreated"] = $date
-    $tagsToUpdate["TimeCreatedInPST"] = $time_PST
+    Write-Host "Preparing to add new tags..."
+    $tagsToUpdate = @{
+        Creator = $creator
+        DateCreated = $date
+        TimeCreatedInPST = $time_PST
+    }
+    Write-Host "Tags to be added: $($tagsToUpdate | ConvertTo-Json)"
 
     # Apply the tags to the resource using the 'Update-AzTag' cmdlet with the 'Merge' operation.
+    Write-Host "Applying tags to resource $resourceId..."
     Update-AzTag -ResourceId $resourceId -Tag $tagsToUpdate -Operation Merge
 
     # Output a success message to the console.
     Write-Host "Tags have been added for the resource with ID $resourceId."
+
 } catch {
     # Handle any errors that occur during the tagging process.
-    Write-Host "Failed to update tags for resource $resourceId. Error: $_"
+    Write-Host "Failed to update tags for resource $resourceId. Error: $($_.Exception.Message)"
+    Write-Host "Stack Trace: $($_.Exception.StackTrace)"
 }
 
 # Output the current user context for auditing or logging purposes.
