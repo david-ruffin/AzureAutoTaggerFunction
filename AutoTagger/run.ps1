@@ -78,9 +78,10 @@ try {
     # Retrieve the current tags on the resource using its resourceId.
     Write-Host "Attempting to retrieve current tags for resource $resourceId..."
     $currentTags = Get-AzTag -ResourceId $resourceId
-    write-host "Current Tags: $currentTags"
-    
-    if ($currentTags -eq $null) {
+    Write-Host "Current Tags: $currentTags"
+
+    # Initialize tags if they are null or empty.
+    if (-not $currentTags -or -not $currentTags.Tags) {
         Write-Host "No tags found on resource $resourceId. Proceeding to add new tags."
         $currentTags = @{ Tags = @{} }  # Initialize empty tag hashtable
     } else {
@@ -89,9 +90,10 @@ try {
 
     # Check if any of the key tags already exist (Creator, DateCreated, or TimeCreatedInPST).
     Write-Host "Checking for existing key tags (Creator, DateCreated, TimeCreatedInPST)..."
-    if ($currentTags.Tags.ContainsKey("Creator") -or 
+    if ($currentTags.Tags -and (
+        $currentTags.Tags.ContainsKey("Creator") -or 
         $currentTags.Tags.ContainsKey("DateCreated") -or 
-        $currentTags.Tags.ContainsKey("TimeCreatedInPST")) {
+        $currentTags.Tags.ContainsKey("TimeCreatedInPST"))) {
         Write-Host "One or more of the required tags (Creator, DateCreated, TimeCreatedInPST) already exist. Exiting without adding tags."
         return
     }
@@ -118,5 +120,6 @@ try {
     Write-Host "Stack Trace: $($_.Exception.StackTrace)"
 }
 
+
 # Output the current user context for auditing or logging purposes.
-whoami
+# whoami
