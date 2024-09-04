@@ -2,8 +2,6 @@
 # determines whether to update or add tags to an Azure resource, and
 # handles potential errors during the tagging process.
 
-
-
 param($eventGridEvent, $TriggerMetadata)
 Import-Module Az.Resources
 Import-Module Az.Accounts
