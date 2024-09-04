@@ -18,20 +18,19 @@ $name = $eventGridEvent.data.claims.name
 $appid = $eventGridEvent.data.claims.appid
 $email = $eventGridEvent.data.claims.'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'
 $resourceId = $eventGridEvent.data.resourceUri
-$ipaddr = $eventGridEvent.data.claims.ipaddr
 $operationName = $eventGridEvent.data.operationName
 
-# URL of the function app that is running this code (replace with your actual Function App URI).
-$functionAppUri = "/subscriptions/<subscription_id>/resourcegroups/rg-autotagger/providers/Microsoft.Web/sites/func-autotagger-siracaklhgutu"
+# Extract the subject from the event (which contains the resource triggering the event).
+$eventSubject = $eventGridEvent.subject
 
-# Check if the event is coming from the Function App trying to tag itself.
-if ($resourceId -eq $functionAppUri) {
-    Write-Host "Ignoring tagging operation. The Function App is trying to tag itself."
+# Check if the event is coming from the Function App trying to tag itself by matching the subject field.
+if ($eventSubject -eq $resourceId) {
+    Write-Host "Ignoring tagging operation. The event is coming from the Function App trying to tag itself."
     return
 }
 
 # Check if 'ipaddr' is present; if not, skip tagging this resource.
-if (-not $ipaddr) {
+if (-not $eventGridEvent.data.claims.ipaddr) {
     Write-Host "No IP address found in the event data. Skipping tagging for resource $resourceId."
     return
 }
