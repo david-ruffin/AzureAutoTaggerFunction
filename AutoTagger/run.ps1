@@ -21,6 +21,15 @@ $resourceId = $eventGridEvent.data.resourceUri
 $ipaddr = $eventGridEvent.data.claims.ipaddr
 $operationName = $eventGridEvent.data.operationName
 
+# URL of the function app that is running this code (replace with your actual Function App URI).
+$functionAppUri = "/subscriptions/<subscription_id>/resourcegroups/rg-autotagger/providers/Microsoft.Web/sites/func-autotagger-siracaklhgutu"
+
+# Check if the event is coming from the Function App trying to tag itself.
+if ($resourceId -eq $functionAppUri) {
+    Write-Host "Ignoring tagging operation. The Function App is trying to tag itself."
+    return
+}
+
 # Check if 'ipaddr' is present; if not, skip tagging this resource.
 if (-not $ipaddr) {
     Write-Host "No IP address found in the event data. Skipping tagging for resource $resourceId."
@@ -37,7 +46,6 @@ Write-Host "email: $email"
 Write-Host "appid: $appid"
 Write-Host "date: $date"
 Write-Host "time_PST: $time_PST"
-Write-Host "creator: $creator"
 Write-Host "creator: $creator"
 Write-Host "Operation Name: $operationName"
 
@@ -84,5 +92,6 @@ try {
     # Handle any errors that occur during the tagging process.
     Write-Host "Failed to update tags for resource $resourceId. Error: $_"
 }
+
 # Output the current user context for auditing or logging purposes.
 whoami
