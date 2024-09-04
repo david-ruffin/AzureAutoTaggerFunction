@@ -1,6 +1,9 @@
 # This script processes an Event Grid event to extract relevant metadata,
 # determines whether to update or add tags to an Azure resource, and
 # handles potential errors during the tagging process.
+Import-Module Az.Accounts
+Import-Module Az.Authorization
+Import-Module Az.MSGraph
 
 param($eventGridEvent, $TriggerMetadata)
 
