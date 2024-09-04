@@ -1,12 +1,12 @@
 # This script processes an Event Grid event to extract relevant metadata,
 # determines whether to update or add tags to an Azure resource, and
 # handles potential errors during the tagging process.
-Import-Module Az.Accounts
-Import-Module Az.Authorization
-Import-Module Az.MSGraph
+
+
 
 param($eventGridEvent, $TriggerMetadata)
-
+Import-Module Az.Resources
+Import-Module Az.Accounts
 # Convert the event grid event to JSON format and output it to the console.
 $eventGridEvent | ConvertTo-Json -Depth 5 | Write-Host
 
