@@ -19,15 +19,7 @@ $appid = $eventGridEvent.data.claims.appid
 $email = $eventGridEvent.data.claims.'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'
 $resourceId = $eventGridEvent.data.resourceUri
 $operationName = $eventGridEvent.data.operationName
-
-# Extract the subject from the event (which contains the resource triggering the event).
-$eventSubject = $eventGridEvent.subject
-
-# Check if the event is coming from the Function App trying to tag itself by matching the subject field.
-if ($eventSubject -eq $resourceId) {
-    Write-Host "Ignoring tagging operation. The event is coming from the Function App trying to tag itself."
-    return
-}
+$subject = $eventGridEvent.subject
 
 # Check if 'ipaddr' is present; if not, skip tagging this resource.
 if (-not $eventGridEvent.data.claims.ipaddr) {
@@ -47,6 +39,7 @@ Write-Host "date: $date"
 Write-Host "time_PST: $time_PST"
 Write-Host "creator: $creator"
 Write-Host "Operation Name: $operationName"
+Write-Host "Subject: $subject "
 
 # Define a list of resource types to ignore.
 $ignore = @(
