@@ -3,8 +3,24 @@
 # handles potential errors during the tagging process.
 
 param($eventGridEvent, $TriggerMetadata)
+
+# Import required modules and check success
 Import-Module Az.Resources
+if (-not $?) {
+    Write-Host "Failed to import Az.Resources module. Exiting script."
+    exit 1
+} else {
+    Write-Host "Successfully imported Az.Resources module."
+}
+
 Import-Module Az.Accounts
+if (-not $?) {
+    Write-Host "Failed to import Az.Accounts module. Exiting script."
+    exit 1
+} else {
+    Write-Host "Successfully imported Az.Accounts module."
+}
+
 # Convert the event grid event to JSON format and output it to the console.
 $eventGridEvent | ConvertTo-Json -Depth 5 | Write-Host
 
@@ -62,6 +78,7 @@ try {
     # Retrieve the current tags on the resource using its resourceId.
     Write-Host "Attempting to retrieve current tags for resource $resourceId..."
     $currentTags = Get-AzTag -ResourceId $resourceId
+    write-host "Current Tags: $currentTags"
     
     if ($currentTags -eq $null) {
         Write-Host "No tags found on resource $resourceId. Proceeding to add new tags."
