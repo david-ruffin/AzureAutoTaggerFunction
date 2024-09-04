@@ -19,7 +19,7 @@ $appid = $eventGridEvent.data.claims.appid
 $email = $eventGridEvent.data.claims.'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'
 $resourceId = $eventGridEvent.data.resourceUri
 $ipaddr = $eventGridEvent.data.claims.ipaddr
-$operationName = $eventData.data.operationName
+$operationName = $eventGridEvent.data.operationName
 
 # Check if 'ipaddr' is present; if not, skip tagging this resource.
 if (-not $ipaddr) {
