@@ -31,15 +31,34 @@ $date = Get-Date -Format 'M/d/yyyy'
 $time_PST = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), 'Pacific Standard Time').ToString("hh:mmtt") + ' PST'
 
 # Extract relevant claims data from the event payload.
-$name = $eventGridEvent.data.claims.name
-$appid = $eventGridEvent.data.claims.appid
-$email = $eventGridEvent.data.claims.'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'
+$claims = $eventGridEvent.data.claims
+$name = $claims.name
+$appid = $claims.appid
+$email = $claims.'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'
 $resourceId = $eventGridEvent.data.resourceUri
 $operationName = $eventGridEvent.data.operationName
 $subject = $eventGridEvent.subject
 
-# Check if 'ipaddr' is present in the claims; if not, assume the event was not initiated by an end user and skip tagging.
-if (-not $eventGridEvent.data.claims.ipaddr) {
+# Extract the IP address from 'ipaddr' or 'clientIpAddress' claims.
+$ipAddress = $claims.ipaddr
+if (-not $ipAddress) {
+    $ipAddress = $claims.clientIpAddress
+}
+
+# Output extracted information for debugging purposes.
+Write-Host "Name: $name"
+Write-Host "Resource ID: $resourceId"
+Write-Host "Email: $email"
+Write-Host "App ID: $appid"
+Write-Host "IP Address: $ipAddress"
+Write-Host "Date: $date"
+Write-Host "Time PST: $time_PST"
+Write-Host "Creator: $creator"
+Write-Host "Operation Name: $operationName"
+Write-Host "Subject: $subject"
+
+# Check if the IP address is present; if not, skip tagging this resource.
+if (-not $ipAddress) {
     Write-Host "No IP address found in the event data. Skipping tagging for resource $resourceId."
     return
 }
@@ -47,17 +66,6 @@ if (-not $eventGridEvent.data.claims.ipaddr) {
 # Determine the 'Creator' tag based on the extracted data.
 # If the 'name' claim is not null, use it; otherwise, use the service principal ID.
 $creator = $name -ne $null ? $name : ("Service Principal ID " + $appid)
-
-# Output extracted information for debugging purposes.
-Write-Host "Name: $name"
-Write-Host "Resource ID: $resourceId"
-Write-Host "Email: $email"
-Write-Host "App ID: $appid"
-Write-Host "Date: $date"
-Write-Host "Time PST: $time_PST"
-Write-Host "Creator: $creator"
-Write-Host "Operation Name: $operationName"
-Write-Host "Subject: $subject"
 
 # Define a list of resource types to ignore to prevent unnecessary tagging.
 $ignore = @(
