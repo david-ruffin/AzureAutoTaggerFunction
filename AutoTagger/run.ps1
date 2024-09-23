@@ -123,14 +123,30 @@ $includedResourceTypes = @(
 )
 
 # Attempt to retrieve the resource to get its resource type.
-$resource = Get-AzResource -ResourceId $resourceId -ErrorAction SilentlyContinue
-
-if ($resource -ne $null) {
-    $resourceType = $resource.ResourceType
+# Check if the resource ID corresponds to a resource group.
+if ($resourceId -match "^/subscriptions/[^/]+/resourceGroups/[^/]+$") {
+    # It's a resource group.
+    $resourceType = "Microsoft.Resources/resourceGroups"
     Write-Host "Resource Type: $resourceType"
+
+    # Retrieve the resource group.
+    $resourceGroup = Get-AzResourceGroup -ResourceId $resourceId -ErrorAction SilentlyContinue
+
+    if ($resourceGroup -eq $null) {
+        Write-Host "Failed to retrieve resource group. Skipping tagging for resource group $resourceId."
+        return
+    }
 } else {
-    Write-Host "Failed to retrieve resource. Skipping tagging for resource $resourceId."
-    return
+    # It's a regular resource.
+    $resource = Get-AzResource -ResourceId $resourceId -ErrorAction SilentlyContinue
+
+    if ($resource -ne $null) {
+        $resourceType = $resource.ResourceType
+        Write-Host "Resource Type: $resourceType"
+    } else {
+        Write-Host "Failed to retrieve resource. Skipping tagging for resource $resourceId."
+        return
+    }
 }
 
 # Check if the resource type is in the included list.
@@ -141,15 +157,19 @@ if ($resourceType -eq $null -or $includedResourceTypes -notcontains $resourceTyp
 
 # Main logic block with error handling to ensure robustness.
 try {
-    # Attempt to retrieve the current tags on the resource using its resourceId.
-    Write-Host "Attempting to retrieve current tags for resource $resourceId..."
-    $currentTags = Get-AzTag -ResourceId $resourceId
-    Write-Host "Current Tags: $currentTags"
+    # Retrieve current tags.
+    if ($resourceType -eq "Microsoft.Resources/resourceGroups") {
+        # For resource groups, get tags from the resource group object.
+        $currentTags = @{ Tags = $resourceGroup.Tags }
+    } else {
+        # For other resources, use Get-AzTag.
+        Write-Host "Attempting to retrieve current tags for resource $resourceId..."
+        $currentTags = Get-AzTag -ResourceId $resourceId
+    }
 
     # Initialize tags if they are null or empty.
     if (-not $currentTags -or -not $currentTags.Tags) {
         Write-Host "No tags found on resource $resourceId. Proceeding to add new tags."
-        # Initialize an empty tags hashtable.
         $currentTags = @{ Tags = @{} }
     } else {
         # Output the existing tags for debugging purposes.
@@ -174,12 +194,9 @@ try {
         }
         Write-Host "Tags to be updated: $($modifiedTags | ConvertTo-Json)"
 
-        # Apply the updated tags to the resource using 'Update-AzTag' with the 'Merge' operation.
+        # Apply the updated tags using 'Update-AzTag' with the 'Merge' operation.
         Write-Host "Applying LastModified tags to resource $resourceId..."
         Update-AzTag -ResourceId $resourceId -Tag $modifiedTags -Operation Merge
-
-        # Output a success message upon completion.
-        Write-Host "LastModified tags have been updated for the resource with ID $resourceId."
     }
     else {
         # New resource logic: Add Creator, DateCreated, and TimeCreatedInPST tags.
@@ -193,13 +210,13 @@ try {
         }
         Write-Host "Tags to be added: $($tagsToUpdate | ConvertTo-Json)"
 
-        # Apply the new tags to the resource using 'Update-AzTag' with the 'Merge' operation.
+        # Apply the new tags using 'Update-AzTag' with the 'Merge' operation.
         Write-Host "Applying new tags to resource $resourceId..."
         Update-AzTag -ResourceId $resourceId -Tag $tagsToUpdate -Operation Merge
-
-        # Output a success message upon completion.
-        Write-Host "Tags have been added for the new resource with ID $resourceId."
     }
+
+    # Output a success message upon completion.
+    Write-Host "Tags have been updated for the resource with ID $resourceId."
 
 } catch {
     # Handle any errors that occur during the tagging process by logging the error message and stack trace.
