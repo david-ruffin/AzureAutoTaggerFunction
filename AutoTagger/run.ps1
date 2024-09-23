@@ -28,58 +28,115 @@ $eventGridEvent | ConvertTo-Json -Depth 5 | Write-Host
 $date = Get-Date -Format 'M/d/yyyy'
 
 # Convert the current date and time to Pacific Standard Time (PST) and format it.
-$time_PST = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), 'Pacific Standard Time').ToString("hh:mmtt") + ' PST'
+$timeZone = [System.TimeZoneInfo]::FindSystemTimeZoneById("Pacific Standard Time")
+$time_PST = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), $timeZone.Id).ToString("hh:mmtt") + ' ' + $timeZone.StandardName
 
-# Extract relevant claims data from the event payload.
+# Extract relevant data from the event payload.
 $claims = $eventGridEvent.data.claims
-$name = $claims.name
-$appid = $claims.appid
-$email = $claims.'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'
 $resourceId = $eventGridEvent.data.resourceUri
 $operationName = $eventGridEvent.data.operationName
 $subject = $eventGridEvent.subject
 
-# Extract the IP address from 'ipaddr' or 'clientIpAddress' claims.
+# Extract the principal type from the event data.
+$principalType = $eventGridEvent.data.authorization.evidence.principalType
+
+# Extract the IP address from 'ipaddr' in claims.
 $ipAddress = $claims.ipaddr
+
+# Check if the IP address is present; if not, skip tagging this resource.
 if (-not $ipAddress) {
-    $ipAddress = $claims.clientIpAddress
+    Write-Host "No IP address found in the claims. Skipping tagging for resource $resourceId."
+    return
+}
+
+# Output the IP address for debugging purposes.
+Write-Host "IP Address: $ipAddress"
+
+# Check if the principal type is acceptable; if not, skip tagging.
+$allowedPrincipalTypes = @("User", "ServicePrincipal", "ManagedIdentity")
+if ($principalType -notin $allowedPrincipalTypes) {
+    Write-Host "Event initiated by $principalType. Skipping tagging for resource $resourceId."
+    return
+}
+
+# Extract the 'name' and 'email' claims.
+$name = $claims.name
+$email = $claims.'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'
+
+# Determine the 'Creator' tag based on the extracted data.
+if ($name -ne $null) {
+    $creator = $name
+} elseif ($email -ne $null) {
+    $creator = $email
+} elseif ($principalType -eq "ServicePrincipal" -or $principalType -eq "ManagedIdentity") {
+    $appid = $claims.appid
+    $creator = "Service Principal ID " + $appid
+} else {
+    $creator = "Unknown"
 }
 
 # Output extracted information for debugging purposes.
 Write-Host "Name: $name"
-Write-Host "Resource ID: $resourceId"
 Write-Host "Email: $email"
-Write-Host "App ID: $appid"
-Write-Host "IP Address: $ipAddress"
+Write-Host "Creator: $creator"
+Write-Host "Resource ID: $resourceId"
+Write-Host "Principal Type: $principalType"
 Write-Host "Date: $date"
 Write-Host "Time PST: $time_PST"
-Write-Host "Creator: $creator"
 Write-Host "Operation Name: $operationName"
 Write-Host "Subject: $subject"
 
-# Check if the IP address is present; if not, skip tagging this resource.
-if (-not $ipAddress) {
-    Write-Host "No IP address found in the event data. Skipping tagging for resource $resourceId."
+# Define the list of resource types to include.
+$includedResourceTypes = @(
+    "Microsoft.Compute/virtualMachines",
+    "Microsoft.Compute/virtualMachineScaleSets",
+    "Microsoft.Storage/storageAccounts",
+    "Microsoft.Sql/servers",
+    "Microsoft.Sql/servers/databases",
+    "Microsoft.KeyVault/vaults",
+    "Microsoft.Network/virtualNetworks",
+    "Microsoft.Network/networkSecurityGroups",
+    "Microsoft.Network/publicIPAddresses",
+    "Microsoft.Network/loadBalancers",
+    "Microsoft.Network/applicationGateways",
+    "Microsoft.Web/sites",
+    "Microsoft.Web/serverfarms",
+    "Microsoft.ContainerService/managedClusters",
+    "Microsoft.OperationalInsights/workspaces",
+    "Microsoft.Resources/resourceGroups",
+    "Microsoft.DocumentDB/databaseAccounts",
+    "Microsoft.AppConfiguration/configurationStores",
+    "Microsoft.EventHub/namespaces",
+    "Microsoft.ServiceBus/namespaces",
+    "Microsoft.Relay/namespaces",
+    "Microsoft.Cache/Redis",
+    "Microsoft.Search/searchServices",
+    "Microsoft.SignalRService/SignalR",
+    "Microsoft.DataFactory/factories",
+    "Microsoft.Logic/workflows",
+    "Microsoft.MachineLearningServices/workspaces",
+    "Microsoft.Insights/components",
+    "Microsoft.Automation/automationAccounts",
+    "Microsoft.RecoveryServices/vaults",
+    "Microsoft.Network/trafficManagerProfiles"
+    # Add other common, taggable resource types as needed.
+)
+
+# Attempt to retrieve the resource to get its resource type.
+$resource = Get-AzResource -ResourceId $resourceId -ErrorAction SilentlyContinue
+
+if ($resource -ne $null) {
+    $resourceType = $resource.ResourceType
+    Write-Host "Resource Type: $resourceType"
+} else {
+    Write-Host "Failed to retrieve resource. Skipping tagging for resource $resourceId."
     return
 }
 
-# Determine the 'Creator' tag based on the extracted data.
-# If the 'name' claim is not null, use it; otherwise, use the service principal ID.
-$creator = $name -ne $null ? $name : ("Service Principal ID " + $appid)
-
-# Define a list of resource types to ignore to prevent unnecessary tagging.
-$ignore = @(
-    "providers/Microsoft.Resources/deployments",
-    "providers/Microsoft.Resources/tags",
-    "providers/Microsoft.Network/frontdoor"
-)
-
-# Check if the resourceId matches any pattern in the ignore list.
-foreach ($ignorePattern in $ignore) {
-    if ($resourceId -like "*$ignorePattern*") {
-        Write-Host "Resource $resourceId is in the ignore list. Skipping..."
-        return
-    }
+# Check if the resource type is in the included list.
+if ($resourceType -eq $null -or $includedResourceTypes -notcontains $resourceType) {
+    Write-Host "Resource type $resourceType is not in the included list. Skipping tagging for resource $resourceId."
+    return
 }
 
 # Main logic block with error handling to ensure robustness.
@@ -99,7 +156,7 @@ try {
         Write-Host "Current Tags: $($currentTags.Tags | ConvertTo-Json)"
     }
 
-    # Check if any of the key tags already exist (Creator, DateCreated, or TimeCreatedInPST).
+    # Check if any of the key tags already exist (Creator, DateCreated, TimeCreatedInPST).
     Write-Host "Checking for existing key tags (Creator, DateCreated, TimeCreatedInPST)..."
     if ($currentTags.Tags -and (
         $currentTags.Tags.ContainsKey("Creator") -or 
@@ -149,6 +206,7 @@ try {
     Write-Host "Failed to update tags for resource $resourceId. Error: $($_.Exception.Message)"
     Write-Host "Stack Trace: $($_.Exception.StackTrace)"
 }
+
 
 # Output the current user context for auditing or logging purposes.
 # whoami
