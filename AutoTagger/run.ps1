@@ -29,7 +29,7 @@ $date = Get-Date -Format 'M/d/yyyy'
 
 # Convert the current date and time to Pacific Standard Time (PST) and format it.
 $timeZone = [System.TimeZoneInfo]::FindSystemTimeZoneById("Pacific Standard Time")
-$time_PST = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), $timeZone.Id).ToString("hh:mmtt") + ' ' + $timeZone.StandardName
+$time_PST = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), $timeZone.Id).ToString("hh:mmtt")
 
 # Extract relevant data from the event payload.
 $claims = $eventGridEvent.data.claims
