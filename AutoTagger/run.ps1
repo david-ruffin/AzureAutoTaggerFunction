@@ -1,30 +1,22 @@
-# Input binding parameter for Event Grid events
 param($eventGridEvent, $TriggerMetadata)
 
-# Import required Azure modules and check for successful import
 Import-Module Az.Resources
 if (-not $?) {
     Write-Host "Failed to import Az.Resources module. Exiting script."
     exit 1
-} else {
-    Write-Host "Successfully imported Az.Resources module."
 }
 
 Import-Module Az.Accounts
 if (-not $?) {
     Write-Host "Failed to import Az.Accounts module. Exiting script."
     exit 1
-} else {
-    Write-Host "Successfully imported Az.Accounts module."
 }
 
 # Log the full event for debugging
 $eventGridEvent | ConvertTo-Json -Depth 5 | Write-Host
 
-# Get current date in M/d/yyyy format
+# Get current date/time in Pacific timezone
 $date = Get-Date -Format 'M/d/yyyy'
-
-# Convert to Pacific Time
 $timeZone = [System.TimeZoneInfo]::FindSystemTimeZoneById("Pacific Standard Time")
 $time_PST = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date), $timeZone.Id).ToString("hh:mmtt")
 
@@ -42,8 +34,6 @@ if (-not $ipAddress) {
     return
 }
 
-Write-Host "IP Address: $ipAddress"
-
 # Validate principal type
 $allowedPrincipalTypes = @("User", "ServicePrincipal", "ManagedIdentity")
 if ($principalType -notin $allowedPrincipalTypes) {
@@ -55,14 +45,17 @@ if ($principalType -notin $allowedPrincipalTypes) {
 $name = $claims.name
 $email = $claims.'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'
 
-if ($name -ne $null) {
+if ($name) {
     $creator = $name
-} elseif ($email -ne $null) {
+}
+elseif ($email) {
     $creator = $email
-} elseif ($principalType -eq "ServicePrincipal" -or $principalType -eq "ManagedIdentity") {
+}
+elseif ($principalType -eq "ServicePrincipal" -or $principalType -eq "ManagedIdentity") {
     $appid = $claims.appid
     $creator = "Service Principal ID " + $appid
-} else {
+}
+else {
     $creator = "Unknown"
 }
 
@@ -112,69 +105,59 @@ $includedResourceTypes = @(
     "Microsoft.Network/trafficManagerProfiles"
 )
 
-# Determine resource type
+# Get resource type and current tags
 if ($resourceId -match "^/subscriptions/[^/]+/resourceGroups/[^/]+$") {
     $resourceType = "Microsoft.Resources/resourceGroups"
     Write-Host "Resource Type: $resourceType"
     
     $resourceGroup = Get-AzResourceGroup -ResourceId $resourceId -ErrorAction SilentlyContinue
-    if ($resourceGroup -eq $null) {
+    if (-not $resourceGroup) {
         Write-Host "Failed to retrieve resource group. Skipping tagging for resource group $resourceId"
         return
     }
-} else {
+    $currentTags = @{ Tags = $resourceGroup.Tags }
+} 
+else {
     $resource = Get-AzResource -ResourceId $resourceId -ErrorAction SilentlyContinue
-    if ($resource -ne $null) {
-        $resourceType = $resource.ResourceType
-        Write-Host "Resource Type: $resourceType"
-    } else {
+    if (-not $resource) {
         Write-Host "Failed to retrieve resource. Skipping tagging for resource $resourceId"
         return
     }
+    $resourceType = $resource.ResourceType
+    Write-Host "Resource Type: $resourceType"
+    $currentTags = Get-AzTag -ResourceId $resourceId -ErrorAction SilentlyContinue
 }
 
 # Validate resource type
-if ($resourceType -eq $null -or $includedResourceTypes -notcontains $resourceType) {
+if (-not $resourceType -or $includedResourceTypes -notcontains $resourceType) {
     Write-Host "Resource type $resourceType is not in the included list. Skipping tagging for resource $resourceId"
     return
 }
 
-# Main tagging logic with error handling
 try {
-    # Get current tags
-    if ($resourceType -eq "Microsoft.Resources/resourceGroups") {
-        $currentTags = @{ Tags = $resourceGroup.Tags }
-    } else {
-        Write-Host "Retrieving current tags for resource $resourceId..."
-        $currentTags = Get-AzTag -ResourceId $resourceId
-    }
-
-    # Initialize tags if null
-    if (-not $currentTags -or -not $currentTags.Tags) {
-        Write-Host "No tags found. Initializing new tags."
-        $currentTags = @{ Tags = @{} }
-    } else {
-        Write-Host "Current Tags: $($currentTags.Tags | ConvertTo-Json)"
-    }
-
-    # Define immutable tags that indicate an existing resource
-    $immutableTags = @("Creator", "DateCreated", "TimeCreatedInPST")
-    
-    # Check if ANY of the immutable tags exist
-    $isExistingResource = $false
-    foreach ($tag in $immutableTags) {
-        if ($currentTags.Tags.ContainsKey($tag)) {
-            $isExistingResource = $true
-            Write-Host "Found existing immutable tag: $tag"
-            break
-        }
-    }
-
-    if ($isExistingResource) {
-        # Existing resource - only update LastModified metadata
-        # Do not touch the immutable tags
-        Write-Host "Existing resource detected - only updating modification metadata"
+    if (-not $currentTags -or -not $currentTags.Tags -or -not $currentTags.Tags.ContainsKey("Creator")) {
+        Write-Host "No Creator tag found - setting initial tags while preserving existing tags"
         
+        # Initialize with any existing tags
+        $tagsToUpdate = @{}
+        if ($currentTags -and $currentTags.Tags) {
+            $currentTags.Tags.GetEnumerator() | ForEach-Object {
+                $tagsToUpdate[$_.Key] = $_.Value
+            }
+        }
+
+        # Add our new tags
+        $tagsToUpdate["Creator"] = $creator
+        $tagsToUpdate["DateCreated"] = $date
+        $tagsToUpdate["TimeCreatedInPST"] = $time_PST
+        $tagsToUpdate["LastModifiedBy"] = $creator
+        $tagsToUpdate["LastModifiedDate"] = $date
+
+        Write-Host "Merging initial tags: $($tagsToUpdate | ConvertTo-Json)"
+        Update-AzTag -ResourceId $resourceId -Tag $tagsToUpdate -Operation Merge
+    }
+    else {
+        Write-Host "Creator tag exists - only updating LastModifiedBy and LastModifiedDate"
         $modifiedTags = @{
             LastModifiedBy = $creator
             LastModifiedDate = $date
@@ -182,26 +165,10 @@ try {
         Write-Host "Updating LastModified tags: $($modifiedTags | ConvertTo-Json)"
         Update-AzTag -ResourceId $resourceId -Tag $modifiedTags -Operation Merge
     }
-    else {
-        # New resource - set all initial tags
-        Write-Host "New resource - setting all initial tags"
-        
-        $tagsToUpdate = @{
-            # Immutable tags
-            Creator = $creator
-            DateCreated = $date
-            TimeCreatedInPST = $time_PST
-            # Modifiable tags
-            LastModifiedBy = $creator
-            LastModifiedDate = $date
-        }
-        Write-Host "Setting initial tags: $($tagsToUpdate | ConvertTo-Json)"
-        Update-AzTag -ResourceId $resourceId -Tag $tagsToUpdate -Operation Merge
-    }
 
     Write-Host "Successfully updated tags for resource $resourceId"
-
-} catch {
+}
+catch {
     Write-Host "Failed to update tags for resource $resourceId. Error: $($_.Exception.Message)"
     Write-Host "Stack Trace: $($_.Exception.StackTrace)"
 }
