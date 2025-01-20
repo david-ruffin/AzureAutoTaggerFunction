@@ -12,7 +12,14 @@ if (-not $?) {
     exit 1
 }
 
+Write-Output "PowerShell Environment Data:"
+$PSVersionTable
+Write-Output "`nInstalled Az Modules:"
+Get-Module -Name Az.* -ListAvailable | Select-Object Name, Version
+
+
 # Log the full event for debugging
+Write-Host "INFORMATION: Full event details:"
 $eventGridEvent | ConvertTo-Json -Depth 5 | Write-Host
 
 # Get current date/time in Pacific timezone
@@ -60,15 +67,15 @@ else {
 }
 
 # Log extracted information
-Write-Host "Name: $name"
-Write-Host "Email: $email"
-Write-Host "Creator: $creator"
-Write-Host "Resource ID: $resourceId"
-Write-Host "Principal Type: $principalType"
-Write-Host "Date: $date"
-Write-Host "Time PST: $time_PST"
-Write-Host "Operation Name: $operationName"
-Write-Host "Subject: $subject"
+Write-Host "INFORMATION: Name: $name"
+Write-Host "INFORMATION: Email: $email"
+Write-Host "INFORMATION: Creator: $creator"
+Write-Host "INFORMATION: Resource ID: $resourceId"
+Write-Host "INFORMATION: Principal Type: $principalType"
+Write-Host "INFORMATION: Date: $date"
+Write-Host "INFORMATION: Time PST: $time_PST"
+Write-Host "INFORMATION: Operation Name: $operationName"
+Write-Host "INFORMATION: Subject: $subject"
 
 # Define included resource types
 $includedResourceTypes = @(
@@ -108,24 +115,42 @@ $includedResourceTypes = @(
 # Get resource type and current tags
 if ($resourceId -match "^/subscriptions/[^/]+/resourceGroups/[^/]+$") {
     $resourceType = "Microsoft.Resources/resourceGroups"
-    Write-Host "Resource Type: $resourceType"
+    Write-Host "INFORMATION: Resource Type: $resourceType"
     
-    $resourceGroup = Get-AzResourceGroup -ResourceId $resourceId -ErrorAction SilentlyContinue
-    if (-not $resourceGroup) {
-        Write-Host "Failed to retrieve resource group. Skipping tagging for resource group $resourceId"
+    try {
+        $resourceGroup = Get-AzResourceGroup -ResourceId $resourceId -ErrorAction Stop
+        if (-not $resourceGroup) {
+            Write-Host "Failed to retrieve resource group. Skipping tagging for resource group $resourceId"
+            return
+        }
+        $currentTags = @{ Tags = $resourceGroup.Tags }
+        Write-Host "INFORMATION: Retrieved resource group tags: $($currentTags | ConvertTo-Json)"
+    }
+    catch {
+        Write-Host "ERROR: Failed to get resource group: $($_.Exception.Message)"
+        Write-Host "ERROR: Full error: $_"
         return
     }
-    $currentTags = @{ Tags = $resourceGroup.Tags }
 } 
 else {
-    $resource = Get-AzResource -ResourceId $resourceId -ErrorAction SilentlyContinue
-    if (-not $resource) {
-        Write-Host "Failed to retrieve resource. Skipping tagging for resource $resourceId"
+    try {
+        $resource = Get-AzResource -ResourceId $resourceId -ErrorAction Stop
+        if (-not $resource) {
+            Write-Host "Failed to retrieve resource. Skipping tagging for resource $resourceId"
+            return
+        }
+        $resourceType = $resource.ResourceType
+        Write-Host "INFORMATION: Resource Type: $resourceType"
+        
+        Write-Host "DEBUG: Attempting to get current tags..."
+        $currentTags = Get-AzTag -ResourceId $resourceId -ErrorAction Stop
+        Write-Host "DEBUG: Current tags retrieved: $($currentTags | ConvertTo-Json -Depth 10)"
+    }
+    catch {
+        Write-Host "ERROR: Failed to get resource or tags: $($_.Exception.Message)"
+        Write-Host "ERROR: Full error: $_"
         return
     }
-    $resourceType = $resource.ResourceType
-    Write-Host "Resource Type: $resourceType"
-    $currentTags = Get-AzTag -ResourceId $resourceId -ErrorAction SilentlyContinue
 }
 
 # Validate resource type
@@ -135,14 +160,19 @@ if (-not $resourceType -or $includedResourceTypes -notcontains $resourceType) {
 }
 
 try {
+    Write-Host "DEBUG: Checking for Creator tag..."
+    Write-Host "DEBUG: Current tags structure: $($currentTags | ConvertTo-Json -Depth 10)"
+    
     if (-not $currentTags -or -not $currentTags.Tags -or -not $currentTags.Tags.ContainsKey("Creator")) {
-        Write-Host "No Creator tag found - setting initial tags while preserving existing tags"
+        Write-Host "INFORMATION: No Creator tag found - setting initial tags while preserving existing tags"
         
         # Initialize with any existing tags
         $tagsToUpdate = @{}
         if ($currentTags -and $currentTags.Tags) {
+            Write-Host "DEBUG: Preserving existing tags:"
             $currentTags.Tags.GetEnumerator() | ForEach-Object {
                 $tagsToUpdate[$_.Key] = $_.Value
+                Write-Host "DEBUG: Preserved tag: $($_.Key) = $($_.Value)"
             }
         }
 
@@ -153,22 +183,27 @@ try {
         $tagsToUpdate["LastModifiedBy"] = $creator
         $tagsToUpdate["LastModifiedDate"] = $date
 
-        Write-Host "Merging initial tags: $($tagsToUpdate | ConvertTo-Json)"
-        Update-AzTag -ResourceId $resourceId -Tag $tagsToUpdate -Operation Merge
+        Write-Host "INFORMATION: Merging initial tags: $($tagsToUpdate | ConvertTo-Json)"
+        $result = Update-AzTag -ResourceId $resourceId -Tag $tagsToUpdate -Operation Merge
+        Write-Host "DEBUG: Tag update result: $($result | ConvertTo-Json -Depth 10)"
     }
     else {
-        Write-Host "Creator tag exists - only updating LastModifiedBy and LastModifiedDate"
+        Write-Host "INFORMATION: Creator tag exists - only updating LastModifiedBy and LastModifiedDate"
+        Write-Host "DEBUG: Existing Creator tag value: $($currentTags.Tags["Creator"])"
+        
         $modifiedTags = @{
             LastModifiedBy = $creator
             LastModifiedDate = $date
         }
-        Write-Host "Updating LastModified tags: $($modifiedTags | ConvertTo-Json)"
-        Update-AzTag -ResourceId $resourceId -Tag $modifiedTags -Operation Merge
+        Write-Host "INFORMATION: Updating LastModified tags: $($modifiedTags | ConvertTo-Json)"
+        $result = Update-AzTag -ResourceId $resourceId -Tag $modifiedTags -Operation Merge
+        Write-Host "DEBUG: Tag update result: $($result | ConvertTo-Json -Depth 10)"
     }
 
-    Write-Host "Successfully updated tags for resource $resourceId"
+    Write-Host "INFORMATION: Successfully updated tags for resource $resourceId"
 }
 catch {
-    Write-Host "Failed to update tags for resource $resourceId. Error: $($_.Exception.Message)"
-    Write-Host "Stack Trace: $($_.Exception.StackTrace)"
+    Write-Host "ERROR: Failed to update tags for resource $resourceId. Error: $($_.Exception.Message)"
+    Write-Host "ERROR: Stack Trace: $($_.Exception.StackTrace)"
+    Write-Host "ERROR: Full error object: $_"
 }
